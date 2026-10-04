@@ -1,50 +1,133 @@
 -- ============================================
---  BLOX FRUITS - FRUIT SNIPER (CHỌN TRÁI)
---  Chọn trái muốn nhặt + auto hop
+--  FRUIT SNIPER - CHỌN TRÁI + AUTO HOP
+--  Tự viết, không phụ thuộc hub
 -- ============================================
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
+local UIS = game:GetService("UserInputService")
 local LP = Players.LocalPlayer
 
--- DANH SÁCH TRÁI TRONG BLOX FRUITS
-local FRUIT_LIST = {
-    -- Common
-    "Rocket", "Spin", "Chop", "Spring", "Bomb", "Smoke", "Spike", "Flame",
-    -- Uncommon
-    "Falcon", "Ice", "Sand", "Dark", "Diamond", "Light", "Rubber", "Barrier",
-    -- Rare
-    "Magma", "Door", "Quake", "Buddha", "Love", "Spider", "Sound", "Phoenix",
-    -- Legendary
-    "Portal", "Rumble", "Pain", "Blizzard", "Gravity", "Mammoth", "T-Rex",
-    -- Mythical
-    "Dough", "Shadow", "Venom", "Control", "Spirit", "Dragon", "Leopard", "Kitsune", "Yeti", "Gas"
-}
-
--- Cấu hình
+-- ===== CẤU HÌNH =====
 local CONFIG = {
     AutoHop = true,
-    HopDelay = 3,
-    ShowESP = true,
-    SelectedFruits = {} -- Trái bạn muốn nhặt
+    HopDelay = 5,
+    AutoCollect = true,
+    SelectedFruits = {"Dough", "Dragon", "Leopard", "Kitsune", "Venom", "Shadow"},
+    AllFruits = {
+        "Rocket", "Spin", "Chop", "Spring", "Bomb", "Smoke", "Spike", "Flame",
+        "Falcon", "Ice", "Sand", "Dark", "Diamond", "Light", "Rubber", "Barrier",
+        "Magma", "Door", "Quake", "Buddha", "Love", "Spider", "Sound", "Phoenix",
+        "Portal", "Rumble", "Pain", "Blizzard", "Gravity", "Mammoth", "T-Rex",
+        "Dough", "Shadow", "Venom", "Control", "Spirit", "Dragon", "Leopard", "Kitsune", "Yeti", "Gas"
+    }
 }
 
-for _, name in ipairs({"FruitSniperGUI", "FruitESP"}) do
-    local old = CoreGui:FindFirstChild(name)
-    if old then old:Destroy() end
+-- Xóa GUI cũ
+for _, n in ipairs({"FruitSniperGUI", "FruitESP"}) do
+    local o = CoreGui:FindFirstChild(n)
+    if o then o:Destroy() end
 end
 
--- ===== GUI CHÍNH =====
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "FruitSniperGUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = CoreGui
+-- ===== HTTP TIMEOUT PATCH (Delta fix) =====
+local _rawHttp = nil
+pcall(function() if request then _rawHttp = request end end)
+pcall(function() if not _rawHttp and syn and syn.request then _rawHttp = syn.request end end)
 
--- Nút mở menu
-local ToggleBtn = Instance.new("TextButton", ScreenGui)
+local function safeGet(url)
+    if _rawHttp then
+        local result, done = nil, false
+        task.spawn(function()
+            local ok, res = pcall(_rawHttp, {Url = url, Method = "GET"})
+            if ok then result = res end
+            done = true
+        end)
+        local t0 = tick()
+        while not done and tick() - t0 < 5 do task.wait(0.1) end
+        return result and result.Body or ""
+    else
+        local ok, res = pcall(game.HttpGet, game, url)
+        return ok and res or ""
+    end
+end
+
+-- ===== HÀM TÌM TRÁI =====
+local function isSelected(fruitName)
+    for _, f in ipairs(CONFIG.SelectedFruits) do
+        if fruitName:lower():find(f:lower()) then return true end
+    end
+    return false
+end
+
+local function findFruits()
+    local found = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if (obj:IsA("Tool") or obj:IsA("Model")) and obj.Name:find("Fruit") then
+            if isSelected(obj.Name) then
+                table.insert(found, obj)
+            end
+        end
+    end
+    return found
+end
+
+-- ===== AUTO NHẶT TRÁI =====
+local function collectFruit(fruit)
+    local char = LP.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    
+    local part = fruit:IsA("Tool") and fruit:FindFirstChild("Handle") or fruit:FindFirstChild("Handle") or fruit
+    if part and part:IsA("BasePart") then
+        hrp.CFrame = part.CFrame + Vector3.new(0, 3, 0)
+        task.wait(0.3)
+        -- Kích hoạt nhặt
+        if firetouchinterest then
+            pcall(function()
+                firetouchinterest(hrp, part, 0)
+                task.wait(0.1)
+                firetouchinterest(hrp, part, 1)
+            end)
+        end
+    end
+end
+
+-- ===== SERVER HOP =====
+local function serverHop()
+    local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+    local body = safeGet(url)
+    if body == "" then return false end
+    
+    local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
+    if not ok or not data or not data.data then return false end
+    
+    local servers = {}
+    for _, s in ipairs(data.data) do
+        if s.playing < s.maxPlayers and s.id ~= game.JobId then
+            table.insert(servers, s.id)
+        end
+    end
+    
+    if #servers > 0 then
+        local chosen = servers[math.random(1, #servers)]
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, chosen, LP)
+        end)
+        return true
+    end
+    return false
+end
+
+-- ===== GUI =====
+local SG = Instance.new("ScreenGui")
+SG.Name = "FruitSniperGUI"
+SG.ResetOnSpawn = false
+SG.Parent = CoreGui
+
+local ToggleBtn = Instance.new("TextButton", SG)
 ToggleBtn.Size = UDim2.new(0, 130, 0, 38)
 ToggleBtn.Position = UDim2.new(0, 15, 0, 15)
 ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
@@ -55,24 +138,22 @@ ToggleBtn.TextSize = 13
 ToggleBtn.BorderSizePixel = 0
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 8)
 
--- Khung menu chính
-local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size = UDim2.new(0, 500, 0, 450)
-MainFrame.Position = UDim2.new(0.5, -250, 0.5, -225)
-MainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
-MainFrame.BorderSizePixel = 0
-MainFrame.Visible = false
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 14)
+local F = Instance.new("Frame", SG)
+F.Size = UDim2.new(0, 480, 0, 450)
+F.Position = UDim2.new(0.5, -240, 0.5, -225)
+F.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+F.BorderSizePixel = 0
+F.Visible = false
+Instance.new("UICorner", F).CornerRadius = UDim.new(0, 14)
 
-local FS = Instance.new("UIStroke", MainFrame)
-FS.Color = Color3.fromRGB(0, 120, 215)
-FS.Thickness = 2
+local FStroke = Instance.new("UIStroke", F)
+FStroke.Color = Color3.fromRGB(0, 120, 215)
+FStroke.Thickness = 2
 
--- Thanh tiêu đề
-local Title = Instance.new("TextLabel", MainFrame)
+local Title = Instance.new("TextLabel", F)
 Title.Size = UDim2.new(1, 0, 0, 45)
 Title.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
-Title.Text = "  🍎 FRUIT SNIPER - CHỌN TRÁI"
+Title.Text = "  🍎 FRUIT SNIPER"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
@@ -91,20 +172,18 @@ CloseBtn.TextSize = 16
 CloseBtn.BorderSizePixel = 0
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 8)
 
--- Status
-local StatusLabel = Instance.new("TextLabel", MainFrame)
-StatusLabel.Size = UDim2.new(1, -20, 0, 30)
-StatusLabel.Position = UDim2.new(0, 10, 0, 50)
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.Text = "Chưa chọn trái nào"
-StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-StatusLabel.Font = Enum.Font.Gotham
-StatusLabel.TextSize = 12
-StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+local Status = Instance.new("TextLabel", F)
+Status.Size = UDim2.new(1, -20, 0, 30)
+Status.Position = UDim2.new(0, 10, 0, 50)
+Status.BackgroundTransparency = 1
+Status.Text = "Chọn trái muốn nhặt ↓"
+Status.TextColor3 = Color3.fromRGB(200, 200, 200)
+Status.Font = Enum.Font.Gotham
+Status.TextSize = 12
+Status.TextXAlignment = Enum.TextXAlignment.Left
 
--- Scroll chứa danh sách trái
-local Scroll = Instance.new("ScrollingFrame", MainFrame)
-Scroll.Size = UDim2.new(1, -20, 1, -150)
+local Scroll = Instance.new("ScrollingFrame", F)
+Scroll.Size = UDim2.new(1, -20, 1, -160)
 Scroll.Position = UDim2.new(0, 10, 0, 85)
 Scroll.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
 Scroll.BorderSizePixel = 0
@@ -112,80 +191,69 @@ Scroll.ScrollBarThickness = 6
 Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 Instance.new("UICorner", Scroll).CornerRadius = UDim.new(0, 8)
 
-local ListLayout = Instance.new("UIGridLayout", Scroll)
-ListLayout.CellSize = UDim2.new(0.5, -6, 0, 36)
-ListLayout.CellPadding = UDim2.new(0, 6, 0, 6)
-ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+local GL = Instance.new("UIGridLayout", Scroll)
+GL.CellSize = UDim2.new(0.5, -6, 0, 36)
+GL.CellPadding = UDim2.new(0, 6, 0, 6)
+GL.SortOrder = Enum.SortOrder.LayoutOrder
 
-local Padding = Instance.new("UIPadding", Scroll)
-Padding.PaddingTop = UDim.new(0, 8)
-Padding.PaddingLeft = UDim.new(0, 8)
-Padding.PaddingRight = UDim.new(0, 8)
+local Pad = Instance.new("UIPadding", Scroll)
+Pad.PaddingTop = UDim.new(0, 8)
+Pad.PaddingLeft = UDim.new(0, 8)
+Pad.PaddingRight = UDim.new(0, 8)
 
--- Hàm tạo nút trái
-local fruitButtons = {}
-local function createFruitBtn(fruitName)
-    local btn = Instance.new("TextButton", Scroll)
-    btn.BackgroundColor3 = Color3.fromRGB(42, 42, 52)
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Text = fruitName
-    btn.Font = Enum.Font.GothamMedium
-    btn.TextSize = 12
-    btn.BorderSizePixel = 0
-    btn.AutoButtonColor = false
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+local fruitBtns = {}
+local function createBtn(name)
+    local b = Instance.new("TextButton", Scroll)
+    b.BackgroundColor3 = Color3.fromRGB(42, 42, 52)
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.Text = name
+    b.Font = Enum.Font.GothamMedium
+    b.TextSize = 12
+    b.BorderSizePixel = 0
+    b.AutoButtonColor = false
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
     
-    btn.MouseButton1Click:Connect(function()
-        -- Toggle chọn/bỏ chọn
+    -- Kiểm tra đã chọn chưa
+    if isSelected(name) then
+        b.BackgroundColor3 = Color3.fromRGB(0, 170, 80)
+    end
+    
+    b.MouseButton1Click:Connect(function()
         local found = false
         for i, f in ipairs(CONFIG.SelectedFruits) do
-            if f == fruitName then
+            if f == name then
                 table.remove(CONFIG.SelectedFruits, i)
                 found = true
                 break
             end
         end
         if not found then
-            table.insert(CONFIG.SelectedFruits, fruitName)
+            table.insert(CONFIG.SelectedFruits, name)
         end
-        
-        -- Cập nhật màu
-        if found then
-            btn.BackgroundColor3 = Color3.fromRGB(42, 42, 52)
-        else
-            btn.BackgroundColor3 = Color3.fromRGB(0, 170, 80)
-        end
-        
-        -- Cập nhật status
-        if #CONFIG.SelectedFruits > 0 then
-            StatusLabel.Text = "✅ Đã chọn: " .. table.concat(CONFIG.SelectedFruits, ", ")
-            StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
-        else
-            StatusLabel.Text = "Chưa chọn trái nào"
-            StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-        end
+        b.BackgroundColor3 = found and Color3.fromRGB(42, 42, 52) or Color3.fromRGB(0, 170, 80)
+        Status.Text = "✅ Đã chọn " .. #CONFIG.SelectedFruits .. " trái"
+        Status.TextColor3 = Color3.fromRGB(0, 255, 100)
     end)
     
-    fruitButtons[fruitName] = btn
+    fruitBtns[name] = b
 end
 
--- Tạo nút cho từng trái
-for _, fruit in ipairs(FRUIT_LIST) do
-    createFruitBtn(fruit)
+for _, fruit in ipairs(CONFIG.AllFruits) do
+    createBtn(fruit)
 end
 
-Scroll.CanvasSize = UDim2.new(0, 0, 0, ListLayout.AbsoluteContentSize.Y + 20)
+Scroll.CanvasSize = UDim2.new(0, 0, 0, GL.AbsoluteContentSize.Y + 20)
 
 -- Nút điều khiển
-local ControlFrame = Instance.new("Frame", MainFrame)
-ControlFrame.Size = UDim2.new(1, -20, 0, 50)
-ControlFrame.Position = UDim2.new(0, 10, 1, -60)
-ControlFrame.BackgroundTransparency = 1
+local CtrlFrame = Instance.new("Frame", F)
+CtrlFrame.Size = UDim2.new(1, -20, 0, 50)
+CtrlFrame.Position = UDim2.new(0, 10, 1, -60)
+CtrlFrame.BackgroundTransparency = 1
 
-local function mkCtrlBtn(txt, xPos, color, callback)
-    local b = Instance.new("TextButton", ControlFrame)
+local function mkCtrl(txt, x, color, cb)
+    local b = Instance.new("TextButton", CtrlFrame)
     b.Size = UDim2.new(0.33, -4, 1, 0)
-    b.Position = UDim2.new(xPos, 0, 0, 0)
+    b.Position = UDim2.new(x, 0, 0, 0)
     b.BackgroundColor3 = color
     b.TextColor3 = Color3.fromRGB(255, 255, 255)
     b.Text = txt
@@ -193,191 +261,85 @@ local function mkCtrlBtn(txt, xPos, color, callback)
     b.TextSize = 12
     b.BorderSizePixel = 0
     Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
-    b.MouseButton1Click:Connect(callback)
-    return b
+    b.MouseButton1Click:Connect(cb)
 end
 
-mkCtrlBtn("⚡ Server Hop", 0, Color3.fromRGB(0, 120, 215), function()
-    StatusLabel.Text = "⚡ Đang chuyển server..."
-    local function hop()
-        local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
-        local ok, response = pcall(function()
-            return HttpService:JSONDecode(game:HttpGet(url))
-        end)
-        if ok and response and response.data then
-            local servers = {}
-            for _, s in ipairs(response.data) do
-                if s.playing < s.maxPlayers and s.id ~= game.JobId then
-                    table.insert(servers, s.id)
-                end
-            end
-            if #servers > 0 then
-                TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)], LP)
-            end
-        end
+mkCtrl("⚡ Hop Ngay", 0, Color3.fromRGB(0, 120, 215), function()
+    Status.Text = "⚡ Đang hop..."
+    Status.TextColor3 = Color3.fromRGB(0, 170, 255)
+    if not serverHop() then
+        Status.Text = "❌ Hop thất bại"
+        Status.TextColor3 = Color3.fromRGB(255, 100, 100)
     end
-    hop()
 end)
 
-mkCtrlBtn("✅ Chọn tất cả", 0.33, Color3.fromRGB(0, 170, 80), function()
-    for _, fruit in ipairs(FRUIT_LIST) do
-        local found = false
-        for _, f in ipairs(CONFIG.SelectedFruits) do
-            if f == fruit then found = true break end
-        end
-        if not found then
-            table.insert(CONFIG.SelectedFruits, fruit)
-        end
-        if fruitButtons[fruit] then
-            fruitButtons[fruit].BackgroundColor3 = Color3.fromRGB(0, 170, 80)
-        end
-    end
-    StatusLabel.Text = "✅ Đã chọn tất cả trái"
-    StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
-end)
-
-mkCtrlBtn("❌ Bỏ chọn", 0.66, Color3.fromRGB(220, 50, 50), function()
+mkCtrl("✅ Chọn tất cả", 0.33, Color3.fromRGB(0, 170, 80), function()
     CONFIG.SelectedFruits = {}
-    for _, btn in pairs(fruitButtons) do
-        btn.BackgroundColor3 = Color3.fromRGB(42, 42, 52)
-    end
-    StatusLabel.Text = "Đã bỏ chọn tất cả"
-    StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-end)
-
--- ===== ESP TRÁI =====
-local espFolder = Instance.new("Folder", ScreenGui)
-espFolder.Name = "FruitESP"
-
-local function isFruitSelected(name)
-    if #CONFIG.SelectedFruits == 0 then return true end
-    for _, f in ipairs(CONFIG.SelectedFruits) do
-        if name:lower():find(f:lower()) then return true end
-    end
-    return false
-end
-
-local function createESP(fruit)
-    if not fruit:IsA("BasePart") and not fruit:IsA("Tool") then return end
-    local part = fruit:IsA("Tool") and fruit:FindFirstChild("Handle") or fruit
-    if not part or not part:IsA("BasePart") then return end
-    
-    if espFolder:FindFirstChild(fruit:GetFullName()) then return end
-    
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = fruit:GetFullName()
-    billboard.Size = UDim2.new(0, 200, 0, 50)
-    billboard.StudsOffset = Vector3.new(0, 3, 0)
-    billboard.AlwaysOnTop = true
-    billboard.Parent = espFolder
-    billboard.Adornee = part
-    
-    local label = Instance.new("TextLabel", billboard)
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Text = "🍎 " .. fruit.Name
-    label.TextColor3 = Color3.fromRGB(255, 200, 0)
-    label.TextStrokeTransparency = 0
-    label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    label.TextScaled = true
-    label.Font = Enum.Font.GothamBold
-end
-
--- Vòng lặp ESP
-task.spawn(function()
-    while task.wait(1) do
-        if CONFIG.ShowESP then
-            -- Xóa ESP cũ
-            for _, esp in ipairs(espFolder:GetChildren()) do
-                esp:Destroy()
-            end
-            
-            -- Tạo ESP mới cho trái
-            for _, obj in ipairs(workspace:GetDescendants()) do
-                if obj.Name:find("Fruit") and (obj:IsA("Tool") or obj:IsA("Model")) then
-                    if isFruitSelected(obj.Name) then
-                        createESP(obj)
-                    end
-                end
-            end
+    for _, fruit in ipairs(CONFIG.AllFruits) do
+        table.insert(CONFIG.SelectedFruits, fruit)
+        if fruitBtns[fruit] then
+            fruitBtns[fruit].BackgroundColor3 = Color3.fromRGB(0, 170, 80)
         end
     end
+    Status.Text = "✅ Đã chọn tất cả"
+    Status.TextColor3 = Color3.fromRGB(0, 255, 100)
 end)
 
--- ===== AUTO HOP =====
+mkCtrl("❌ Bỏ chọn", 0.66, Color3.fromRGB(220, 50, 50), function()
+    CONFIG.SelectedFruits = {}
+    for _, b in pairs(fruitBtns) do
+        b.BackgroundColor3 = Color3.fromRGB(42, 42, 52)
+    end
+    Status.Text = "Đã bỏ chọn tất cả"
+    Status.TextColor3 = Color3.fromRGB(200, 200, 200)
+end)
+
+-- ===== VÒNG LẶP CHÍNH =====
 task.spawn(function()
-    while task.wait(3) do
-        if CONFIG.AutoHop and #CONFIG.SelectedFruits > 0 then
-            -- Tìm trái trong danh sách đã chọn
-            local found = false
-            for _, obj in ipairs(workspace:GetDescendants()) do
-                if obj.Name:find("Fruit") and (obj:IsA("Tool") or obj:IsA("Model")) then
-                    if isFruitSelected(obj.Name) then
-                        found = true
-                        break
-                    end
+    while task.wait(2) do
+        local fruits = findFruits()
+        if #fruits > 0 then
+            Status.Text = "🍎 Tìm thấy " .. #fruits .. " trái!"
+            Status.TextColor3 = Color3.fromRGB(0, 255, 100)
+            
+            if CONFIG.AutoCollect then
+                for _, f in ipairs(fruits) do
+                    collectFruit(f)
+                    task.wait(0.5)
                 end
             end
+        else
+            Status.Text = "❌ Không có trái. Đang hop..."
+            Status.TextColor3 = Color3.fromRGB(255, 180, 0)
             
-            if not found then
-                StatusLabel.Text = "🔍 Không có trái. Đang hop..."
-                StatusLabel.TextColor3 = Color3.fromRGB(255, 180, 0)
-                
-                local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
-                local ok, response = pcall(function()
-                    return HttpService:JSONDecode(game:HttpGet(url))
-                end)
-                if ok and response and response.data then
-                    local servers = {}
-                    for _, s in ipairs(response.data) do
-                        if s.playing < s.maxPlayers and s.id ~= game.JobId then
-                            table.insert(servers, s.id)
-                        end
-                    end
-                    if #servers > 0 then
-                        TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1, #servers)], LP)
-                    end
-                end
+            if CONFIG.AutoHop then
                 task.wait(CONFIG.HopDelay)
-            else
-                StatusLabel.Text = "✅ Đã tìm thấy trái!"
-                StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
-                CONFIG.AutoHop = false
+                serverHop()
             end
         end
     end
 end)
 
 -- ===== SỰ KIỆN =====
-ToggleBtn.MouseButton1Click:Connect(function()
-    MainFrame.Visible = not MainFrame.Visible
-end)
+ToggleBtn.MouseButton1Click:Connect(function() F.Visible = not F.Visible end)
+CloseBtn.MouseButton1Click:Connect(function() F.Visible = false end)
 
-CloseBtn.MouseButton1Click:Connect(function()
-    MainFrame.Visible = false
+local d, ds, sp = false, nil, nil
+Title.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        d = true; ds = i.Position; sp = F.Position
+    end
 end)
-
--- Kéo thả
-local dragging, dragStart, startPos
-Title.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainFrame.Position
+UIS.InputChanged:Connect(function(i)
+    if d and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+        local dl = i.Position - ds
+        F.Position = UDim2.new(sp.X.Scale, sp.X.Offset + dl.X, sp.Y.Scale, sp.Y.Offset + dl.Y)
+    end
+end)
+UIS.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        d = false
     end
 end)
 
-game:GetService("UserInputService").InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-
-game:GetService("UserInputService").InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
-end)
-
-print("✅ Fruit Sniper loaded! Chọn trái muốn nhặt trong menu.")
+print("✅ Fruit Sniper loaded!")
