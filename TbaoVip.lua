@@ -7,17 +7,34 @@ local LP = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
 local aimbotOn = false
-local aimbotRange = 200
+local aimbotRange = 300
 local nametagOn = false
 local nametags = {}
 local autoShootOn = false
 local shootSpeed = 0.1
 local fovCircleOn = true
-local fovSize = 200
+local fovSize = 250
+local ignoreTeam = true
 
 for _, n in ipairs({"MyLoadingGUI", "MyMenuScript", "MyFovGui"}) do
     local o = CoreGui:FindFirstChild(n)
     if o then o:Destroy() end
+end
+
+local function getTeam(plr)
+    local ok, team = pcall(function() return plr.Team end)
+    if ok then return team end
+    return nil
+end
+
+local function isTeammate(plr)
+    if not ignoreTeam then return false end
+    local myTeam = getTeam(LP)
+    local theirTeam = getTeam(plr)
+    if myTeam and theirTeam and myTeam == theirTeam then
+        return true
+    end
+    return false
 end
 
 local function findTarget(range)
@@ -27,15 +44,17 @@ local function findTarget(range)
     local closest, closestDist = nil, range
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LP then
-            local char = plr.Character
-            if char then
-                local head = char:FindFirstChild("Head")
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                if head and hum and hum.Health > 0 then
-                    local dist = (head.Position - myPos).Magnitude
-                    if dist < closestDist then
-                        closest = head
-                        closestDist = dist
+            if not isTeammate(plr) then
+                local char = plr.Character
+                if char then
+                    local head = char:FindFirstChild("Head")
+                    local hum = char:FindFirstChildOfClass("Humanoid")
+                    if head and hum and hum.Health > 0 then
+                        local dist = (head.Position - myPos).Magnitude
+                        if dist < closestDist then
+                            closest = head
+                            closestDist = dist
+                        end
                     end
                 end
             end
@@ -87,8 +106,15 @@ local function createNametag(plr)
     local label = Instance.new("TextLabel", billboard)
     label.Size = UDim2.new(1, 0, 1, 0)
     label.BackgroundTransparency = 1
-    label.Text = "👤 " .. plr.Name
-    label.TextColor3 = Color3.fromRGB(255, 50, 50)
+    
+    if isTeammate(plr) then
+        label.Text = "🟢 " .. plr.Name .. " (Team)"
+        label.TextColor3 = Color3.fromRGB(0, 255, 100)
+    else
+        label.Text = "🔴 " .. plr.Name
+        label.TextColor3 = Color3.fromRGB(255, 50, 50)
+    end
+    
     label.TextStrokeTransparency = 0
     label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
     label.TextScaled = true
@@ -207,8 +233,8 @@ TB.Visible = false
 Instance.new("UICorner", TB).CornerRadius = UDim.new(0, 8)
 
 local F = Instance.new("Frame", SG)
-F.Size = UDim2.new(0, 480, 0, 340)
-F.Position = UDim2.new(0.5, -240, 0.5, -170)
+F.Size = UDim2.new(0, 480, 0, 400)
+F.Position = UDim2.new(0.5, -240, 0.5, -200)
 F.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
 F.BorderSizePixel = 0
 F.Visible = false
@@ -334,6 +360,18 @@ local fovBtn = mkBtn("⭕ FOV: BẬT", function()
     end
 end)
 
+local teamBtn = mkBtn("🤝 Bỏ qua đồng đội: BẬT", function()
+    ignoreTeam = not ignoreTeam
+    if ignoreTeam then
+        teamBtn.Text = "🤝 Bỏ qua đồng đội: BẬT"
+        teamBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 80)
+    else
+        teamBtn.Text = "🤝 Bỏ qua đồng đội: TẮT"
+        teamBtn.BackgroundColor3 = Color3.fromRGB(42, 42, 52)
+    end
+    if nametagOn then updateAllNametags() end
+end)
+
 mkBtn("⚔️ Bật tất cả", function()
     aimbotOn = true
     autoShootOn = true
@@ -352,6 +390,7 @@ mkBtn("🛑 Tắt tất cả", function()
     shootBtn.BackgroundColor3 = Color3.fromRGB(42, 42, 52)
 end)
 
+-- ===== VÒNG LẶP AIMBOT =====
 RunService.RenderStepped:Connect(function()
     if aimbotOn then
         local target = findTarget(aimbotRange)
@@ -359,24 +398,37 @@ RunService.RenderStepped:Connect(function()
             pcall(function()
                 Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
             end)
+            if autoShootOn then
+                local char = LP.Character
+                if char then
+                    local tool = char:FindFirstChildOfClass("Tool")
+                    if tool then
+                        pcall(function() tool:Activate() end)
+                    end
+                end
+            end
         end
     end
 end)
 
+-- ===== VÒNG LẶP AUTO BẮN =====
 task.spawn(function()
     while task.wait(shootSpeed) do
         if autoShootOn then
-            local char = LP.Character
-            if char then
-                local tool = char:FindFirstChildOfClass("Tool")
-                if tool then
-                    pcall(function() tool:Activate() end)
+            local target = findTarget(aimbotRange)
+            if target then
+                local char = LP.Character
+                if char then
+                    local tool = char:FindFirstChildOfClass("Tool")
+                    if tool then
+                        pcall(function() tool:Activate() end)
+                    end
+                    pcall(function()
+                        local vim = game:GetService("VirtualInputManager")
+                        vim:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+                        vim:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+                    end)
                 end
-                pcall(function()
-                    local vim = game:GetService("VirtualInputManager")
-                    vim:SendMouseButtonEvent(0, 0, 0, true, game, 1)
-                    vim:SendMouseButtonEvent(0, 0, 0, false, game, 1)
-                end)
             end
         end
     end
