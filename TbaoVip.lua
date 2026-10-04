@@ -9,7 +9,6 @@ local Camera = workspace.CurrentCamera
 local aimbotOn = false
 local aimbotRange = 300
 local nametagOn = false
-local nametags = {}
 local autoShootOn = false
 local shootSpeed = 0.1
 local fovCircleOn = true
@@ -21,26 +20,24 @@ for _, n in ipairs({"MyLoadingGUI", "MyMenuScript", "MyFovGui"}) do
     if o then o:Destroy() end
 end
 
-local function getTeam(plr)
-    local ok, team = pcall(function() return plr.Team end)
-    if ok then return team end
-    return nil
-end
-
+-- ===== TEAM CHECK =====
 local function isTeammate(plr)
     if not ignoreTeam then return false end
-    local myTeam = getTeam(LP)
-    local theirTeam = getTeam(plr)
-    if myTeam and theirTeam and myTeam == theirTeam then
-        return true
+    local ok, myTeam = pcall(function() return LP.Team end)
+    local ok2, theirTeam = pcall(function() return plr.Team end)
+    if ok and ok2 and myTeam and theirTeam then
+        return myTeam == theirTeam
     end
     return false
 end
 
+-- ===== TÌM ĐỊCH =====
 local function findTarget(range)
     local myChar = LP.Character
-    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
-    local myPos = myChar.HumanoidRootPart.Position
+    if not myChar then return nil end
+    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+    local myPos = myRoot.Position
     local closest, closestDist = nil, range
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LP then
@@ -63,7 +60,7 @@ local function findTarget(range)
     return closest
 end
 
--- ===== VÒNG TRÒN FOV =====
+-- ===== FOV CIRCLE =====
 local fovGui = Instance.new("ScreenGui")
 fovGui.Name = "MyFovGui"
 fovGui.ResetOnSpawn = false
@@ -84,16 +81,19 @@ fovStroke.Color = Color3.fromRGB(0, 170, 255)
 fovStroke.Thickness = 2
 fovStroke.Transparency = 0.3
 
--- ===== NAMETAG =====
+-- ===== NAMETAG (SỬA LỖI) =====
 local function createNametag(plr)
-    if nametags[plr] then
-        pcall(function() nametags[plr]:Destroy() end)
-        nametags[plr] = nil
-    end
+    if plr == LP then return end
+    
+    -- Xóa billboard cũ nếu có
     local char = plr.Character
     if not char then return end
     local head = char:FindFirstChild("Head")
     if not head then return end
+    
+    -- Kiểm tra đã có billboard chưa
+    local existing = head:FindFirstChild("TbaoNametag")
+    if existing then existing:Destroy() end
     
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "TbaoNametag"
@@ -119,37 +119,63 @@ local function createNametag(plr)
     label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
     label.TextScaled = true
     label.Font = Enum.Font.GothamBold
-    
-    nametags[plr] = billboard
 end
 
 local function removeNametag(plr)
-    if nametags[plr] then
-        pcall(function() nametags[plr]:Destroy() end)
-        nametags[plr] = nil
+    local char = plr.Character
+    if char then
+        local head = char:FindFirstChild("Head")
+        if head then
+            local tag = head:FindFirstChild("TbaoNametag")
+            if tag then tag:Destroy() end
+        end
     end
 end
 
 local function updateAllNametags()
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LP then
-            if nametagOn then createNametag(plr) else removeNametag(plr) end
+            if nametagOn then
+                createNametag(plr)
+            else
+                removeNametag(plr)
+            end
         end
     end
 end
 
+-- Xử lý khi player mới vào
 Players.PlayerAdded:Connect(function(plr)
-    plr.CharacterAdded:Connect(function()
+    plr.CharacterAdded:Connect(function(char)
         if nametagOn then
-            task.wait(0.5)
+            task.wait(1)
             createNametag(plr)
         end
     end)
 end)
 
+-- Xử lý khi player rời
 Players.PlayerRemoving:Connect(function(plr)
     removeNametag(plr)
 end)
+
+-- Xử lý khi mình respawn
+LP.CharacterAdded:Connect(function()
+    task.wait(1)
+    if nametagOn then updateAllNametags() end
+end)
+
+-- Xử lý khi player respawn (tất cả)
+for _, plr in ipairs(Players:GetPlayers()) do
+    if plr ~= LP then
+        plr.CharacterAdded:Connect(function()
+            if nametagOn then
+                task.wait(1)
+                createNametag(plr)
+            end
+        end)
+    end
+end
 
 -- ===== LOADING =====
 local LG = Instance.new("ScreenGui")
@@ -390,7 +416,6 @@ mkBtn("🛑 Tắt tất cả", function()
     shootBtn.BackgroundColor3 = Color3.fromRGB(42, 42, 52)
 end)
 
--- ===== VÒNG LẶP AIMBOT =====
 RunService.RenderStepped:Connect(function()
     if aimbotOn then
         local target = findTarget(aimbotRange)
@@ -411,7 +436,6 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ===== VÒNG LẶP AUTO BẮN =====
 task.spawn(function()
     while task.wait(shootSpeed) do
         if autoShootOn then
