@@ -10,8 +10,12 @@ local aimbotOn = false
 local aimbotRange = 200
 local nametagOn = false
 local nametags = {}
+local autoShootOn = false
+local shootSpeed = 0.1
+local fovCircleOn = true
+local fovSize = 200
 
-for _, n in ipairs({"MyLoadingGUI", "MyMenuScript"}) do
+for _, n in ipairs({"MyLoadingGUI", "MyMenuScript", "MyFovGui"}) do
     local o = CoreGui:FindFirstChild(n)
     if o then o:Destroy() end
 end
@@ -40,6 +44,28 @@ local function findTarget(range)
     return closest
 end
 
+-- ===== VÒNG TRÒN FOV =====
+local fovGui = Instance.new("ScreenGui")
+fovGui.Name = "MyFovGui"
+fovGui.ResetOnSpawn = false
+fovGui.IgnoreGuiInset = true
+fovGui.Parent = CoreGui
+
+local fovFrame = Instance.new("Frame", fovGui)
+fovFrame.Size = UDim2.new(0, fovSize, 0, fovSize)
+fovFrame.Position = UDim2.new(0.5, -fovSize/2, 0.5, -fovSize/2)
+fovFrame.BackgroundTransparency = 1
+fovFrame.BorderSizePixel = 0
+
+local fovCircle = Instance.new("UICorner", fovFrame)
+fovCircle.CornerRadius = UDim.new(1, 0)
+
+local fovStroke = Instance.new("UIStroke", fovFrame)
+fovStroke.Color = Color3.fromRGB(0, 170, 255)
+fovStroke.Thickness = 2
+fovStroke.Transparency = 0.3
+
+-- ===== NAMETAG =====
 local function createNametag(plr)
     if nametags[plr] then
         pcall(function() nametags[plr]:Destroy() end)
@@ -181,8 +207,8 @@ TB.Visible = false
 Instance.new("UICorner", TB).CornerRadius = UDim.new(0, 8)
 
 local F = Instance.new("Frame", SG)
-F.Size = UDim2.new(0, 480, 0, 250)
-F.Position = UDim2.new(0.5, -240, 0.5, -125)
+F.Size = UDim2.new(0, 480, 0, 340)
+F.Position = UDim2.new(0.5, -240, 0.5, -170)
 F.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
 F.BorderSizePixel = 0
 F.Visible = false
@@ -284,6 +310,48 @@ local nametagBtn = mkBtn("👁️ Hiện tên: TẮT", function()
     updateAllNametags()
 end)
 
+local shootBtn = mkBtn("🔫 Auto Bắn: TẮT", function()
+    autoShootOn = not autoShootOn
+    if autoShootOn then
+        shootBtn.Text = "🔫 Auto Bắn: BẬT"
+        shootBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 80)
+    else
+        shootBtn.Text = "🔫 Auto Bắn: TẮT"
+        shootBtn.BackgroundColor3 = Color3.fromRGB(42, 42, 52)
+    end
+end)
+
+local fovBtn = mkBtn("⭕ FOV: BẬT", function()
+    fovCircleOn = not fovCircleOn
+    if fovCircleOn then
+        fovBtn.Text = "⭕ FOV: BẬT"
+        fovBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 80)
+        fovFrame.Visible = true
+    else
+        fovBtn.Text = "⭕ FOV: TẮT"
+        fovBtn.BackgroundColor3 = Color3.fromRGB(42, 42, 52)
+        fovFrame.Visible = false
+    end
+end)
+
+mkBtn("⚔️ Bật tất cả", function()
+    aimbotOn = true
+    autoShootOn = true
+    aimbotBtn.Text = "🎯 Aimbot: BẬT"
+    aimbotBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 80)
+    shootBtn.Text = "🔫 Auto Bắn: BẬT"
+    shootBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 80)
+end)
+
+mkBtn("🛑 Tắt tất cả", function()
+    aimbotOn = false
+    autoShootOn = false
+    aimbotBtn.Text = "🎯 Aimbot: TẮT"
+    aimbotBtn.BackgroundColor3 = Color3.fromRGB(42, 42, 52)
+    shootBtn.Text = "🔫 Auto Bắn: TẮT"
+    shootBtn.BackgroundColor3 = Color3.fromRGB(42, 42, 52)
+end)
+
 RunService.RenderStepped:Connect(function()
     if aimbotOn then
         local target = findTarget(aimbotRange)
@@ -292,6 +360,31 @@ RunService.RenderStepped:Connect(function()
                 Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
             end)
         end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(shootSpeed) do
+        if autoShootOn then
+            local char = LP.Character
+            if char then
+                local tool = char:FindFirstChildOfClass("Tool")
+                if tool then
+                    pcall(function() tool:Activate() end)
+                end
+                pcall(function()
+                    local vim = game:GetService("VirtualInputManager")
+                    vim:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+                    vim:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+                end)
+            end
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if fovCircleOn then
+        fovFrame.Position = UDim2.new(0.5, -fovSize/2, 0.5, -fovSize/2)
     end
 end)
 
