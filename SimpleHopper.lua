@@ -1,7 +1,7 @@
--- ============================================
---  FRUIT SNIPER - CHỌN TRÁI + HOP AN TOÀN
---  Tránh server VIP/đầy, tự động nhặt trái
--- ============================================
+-- =====================================================
+--  SIMPLE HOPPER - HOP SERVER + CHECK TRÁI + NHẶT
+--  Đơn giản: hop bất kỳ, kiểm tra trái, nhặt, lặp lại
+-- =====================================================
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
@@ -14,20 +14,17 @@ local LP = Players.LocalPlayer
 -- ===== CẤU HÌNH =====
 local CONFIG = {
     AutoHop = true,
-    HopDelay = 10,          -- Tăng delay để tránh bị chặn
-    AutoCollect = true,
-    SelectedFruits = {"Dough", "Dragon", "Leopard", "Kitsune", "Venom", "Shadow", "Control", "Spirit"},
-    VisitedServers = {},
-    MaxPlayersThreshold = 0.9  -- Chỉ vào server còn dưới 90% sức chứa
+    HopDelay = 10,
+    SelectedFruits = {"Dough", "Dragon", "Leopard", "Kitsune", "Venom", "Shadow"},
+    VisitedServers = {}
 }
 
--- Xóa GUI cũ
-for _, n in ipairs({"FruitSniperGUI", "MyLoadingGUI"}) do
+for _, n in ipairs({"SimpleHopperGUI", "MyLoadingGUI"}) do
     local o = CoreGui:FindFirstChild(n)
     if o then o:Destroy() end
 end
 
--- ===== HTTP AN TOÀN (CHO DELTA) =====
+-- ===== HTTP AN TOÀN =====
 local _rawHttp = nil
 pcall(function() if request then _rawHttp = request end end)
 pcall(function() if not _rawHttp and syn and syn.request then _rawHttp = syn.request end end)
@@ -49,7 +46,6 @@ local function safeGet(url)
     end
 end
 
--- ===== HÀM TÌM TRÁI =====
 local function isSelected(fruitName)
     for _, f in ipairs(CONFIG.SelectedFruits) do
         if fruitName:lower():find(f:lower()) then return true end
@@ -69,13 +65,11 @@ local function findFruits()
     return found
 end
 
--- ===== AUTO NHẶT TRÁI =====
 local function collectFruit(fruit)
     local char = LP.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-    
     local part = fruit:IsA("Tool") and fruit:FindFirstChild("Handle") or fruit:FindFirstChild("Handle") or fruit
     if part and part:IsA("BasePart") then
         hrp.CFrame = part.CFrame + Vector3.new(0, 3, 0)
@@ -90,8 +84,8 @@ local function collectFruit(fruit)
     end
 end
 
--- ===== SERVER HOP AN TOÀN =====
-local function serverHop()
+-- ===== HOP SERVER BẤT KỲ =====
+local function hopAnyServer()
     local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
     local body = safeGet(url)
     if body == "" then return false end
@@ -99,27 +93,16 @@ local function serverHop()
     local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
     if not ok or not data or not data.data then return false end
     
-    local validServers = {}
+    -- Lấy BẤT KỲ server nào còn chỗ
+    local servers = {}
     for _, s in ipairs(data.data) do
-        -- LỌC KỸ:
-        -- 1. Server còn chỗ (không đầy)
-        -- 2. Không phải server hiện tại
-        -- 3. Chưa từng ghé thăm
-        -- 4. Số người chơi dưới ngưỡng (tránh server sắp đầy)
-        local fillRatio = s.playing / s.maxPlayers
-        if s.playing < s.maxPlayers 
-           and s.id ~= game.JobId 
-           and not table.find(CONFIG.VisitedServers, s.id)
-           and fillRatio < CONFIG.MaxPlayersThreshold
-        then
-            table.insert(validServers, s.id)
+        if s.playing < s.maxPlayers and s.id ~= game.JobId then
+            table.insert(servers, s.id)
         end
     end
     
-    if #validServers > 0 then
-        local chosen = validServers[math.random(1, #validServers)]
-        table.insert(CONFIG.VisitedServers, chosen)
-        
+    if #servers > 0 then
+        local chosen = servers[math.random(1, #servers)]
         local success = pcall(function()
             TeleportService:TeleportToPlaceInstance(game.PlaceId, chosen, LP)
         end)
@@ -155,7 +138,7 @@ local LT = Instance.new("TextLabel", Box)
 LT.Size = UDim2.new(1, 0, 0, 40)
 LT.Position = UDim2.new(0, 0, 0, 15)
 LT.BackgroundTransparency = 1
-LT.Text = "Fruit Sniper"
+LT.Text = "Simple Hopper"
 LT.TextColor3 = Color3.fromRGB(0, 170, 255)
 LT.Font = Enum.Font.GothamBold
 LT.TextSize = 24
@@ -193,7 +176,7 @@ PT.TextSize = 14
 
 -- ===== GUI CHÍNH =====
 local SG = Instance.new("ScreenGui")
-SG.Name = "FruitSniperGUI"
+SG.Name = "SimpleHopperGUI"
 SG.ResetOnSpawn = false
 SG.Parent = CoreGui
 
@@ -202,7 +185,7 @@ ToggleBtn.Size = UDim2.new(0, 130, 0, 38)
 ToggleBtn.Position = UDim2.new(0, 15, 0, 15)
 ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
 ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleBtn.Text = "🍎 Fruit Sniper"
+ToggleBtn.Text = "🍎 Simple Hopper"
 ToggleBtn.Font = Enum.Font.GothamBold
 ToggleBtn.TextSize = 13
 ToggleBtn.BorderSizePixel = 0
@@ -224,7 +207,7 @@ FS.Thickness = 2
 local Title = Instance.new("TextLabel", F)
 Title.Size = UDim2.new(1, 0, 0, 45)
 Title.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
-Title.Text = "  🍎 FRUIT SNIPER"
+Title.Text = "  🍎 SIMPLE HOPPER"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
@@ -272,7 +255,6 @@ Pad.PaddingTop = UDim.new(0, 8)
 Pad.PaddingLeft = UDim.new(0, 8)
 Pad.PaddingRight = UDim.new(0, 8)
 
--- Danh sách trái
 local AllFruits = {
     "Rocket", "Spin", "Chop", "Spring", "Bomb", "Smoke", "Spike", "Flame",
     "Falcon", "Ice", "Sand", "Dark", "Diamond", "Light", "Rubber", "Barrier",
@@ -331,8 +313,8 @@ end
 mkCtrl("⚡ Hop Ngay", 0, Color3.fromRGB(0, 120, 215), function()
     Status.Text = "Đang hop..."
     Status.TextColor3 = Color3.fromRGB(0, 170, 255)
-    if not serverHop() then
-        Status.Text = "Hop thất bại"
+    if not hopAnyServer() then
+        Status.Text = "Hop thất bại!"
         Status.TextColor3 = Color3.fromRGB(255, 100, 100)
     end
 end)
@@ -361,18 +343,16 @@ task.spawn(function()
         if #fruits > 0 then
             Status.Text = "🍎 Tìm thấy " .. #fruits .. " trái!"
             Status.TextColor3 = Color3.fromRGB(0, 255, 100)
-            if CONFIG.AutoCollect then
-                for _, f in ipairs(fruits) do
-                    collectFruit(f)
-                    task.wait(0.5)
-                end
+            for _, f in ipairs(fruits) do
+                collectFruit(f)
+                task.wait(0.5)
             end
         else
             Status.Text = "Không có trái. Đang hop..."
             Status.TextColor3 = Color3.fromRGB(255, 180, 0)
             if CONFIG.AutoHop then
                 task.wait(CONFIG.HopDelay)
-                serverHop()
+                hopAnyServer()
             end
         end
     end
@@ -437,4 +417,4 @@ task.spawn(function()
     if _G.OpenMyMenu then _G.OpenMyMenu() end
 end)
 
-print("✅ Fruit Sniper loaded!")
+print("✅ Simple Hopper loaded!")
