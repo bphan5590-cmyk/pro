@@ -1,6 +1,6 @@
 -- ============================================
---  FRUIT SNIPER - CHỌN TRÁI + AUTO HOP
---  Tự viết, không phụ thuộc hub
+--  FRUIT SNIPER - LỌC SERVER AN TOÀN
+--  Tránh server VIP/đầy, tự động nhặt trái
 -- ============================================
 
 local Players = game:GetService("Players")
@@ -13,25 +13,15 @@ local LP = Players.LocalPlayer
 -- ===== CẤU HÌNH =====
 local CONFIG = {
     AutoHop = true,
-    HopDelay = 5,
+    HopDelay = 8, -- Tăng delay để tránh bị Roblox chặn
     AutoCollect = true,
-    SelectedFruits = {"Dough", "Dragon", "Leopard", "Kitsune", "Venom", "Shadow"},
-    AllFruits = {
-        "Rocket", "Spin", "Chop", "Spring", "Bomb", "Smoke", "Spike", "Flame",
-        "Falcon", "Ice", "Sand", "Dark", "Diamond", "Light", "Rubber", "Barrier",
-        "Magma", "Door", "Quake", "Buddha", "Love", "Spider", "Sound", "Phoenix",
-        "Portal", "Rumble", "Pain", "Blizzard", "Gravity", "Mammoth", "T-Rex",
-        "Dough", "Shadow", "Venom", "Control", "Spirit", "Dragon", "Leopard", "Kitsune", "Yeti", "Gas"
-    }
+    -- Danh sách trái muốn nhặt (thêm/bớt tùy ý)
+    SelectedFruits = {"Dough", "Dragon", "Leopard", "Kitsune", "Venom", "Shadow", "Control", "Spirit"},
+    -- Danh sách server đã ghé thăm (để tránh quay lại)
+    VisitedServers = {}
 }
 
--- Xóa GUI cũ
-for _, n in ipairs({"FruitSniperGUI", "FruitESP"}) do
-    local o = CoreGui:FindFirstChild(n)
-    if o then o:Destroy() end
-end
-
--- ===== HTTP TIMEOUT PATCH (Delta fix) =====
+-- ===== HTTP GET AN TOÀN (CHO DELTA) =====
 local _rawHttp = nil
 pcall(function() if request then _rawHttp = request end end)
 pcall(function() if not _rawHttp and syn and syn.request then _rawHttp = syn.request end end)
@@ -84,7 +74,6 @@ local function collectFruit(fruit)
     if part and part:IsA("BasePart") then
         hrp.CFrame = part.CFrame + Vector3.new(0, 3, 0)
         task.wait(0.3)
-        -- Kích hoạt nhặt
         if firetouchinterest then
             pcall(function()
                 firetouchinterest(hrp, part, 0)
@@ -95,8 +84,9 @@ local function collectFruit(fruit)
     end
 end
 
--- ===== SERVER HOP =====
+-- ===== SERVER HOP (ĐÃ LỌC KỸ) =====
 local function serverHop()
+    -- 1. Lấy danh sách server công khai, đã lọc bớt server đầy
     local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
     local body = safeGet(url)
     if body == "" then return false end
@@ -104,31 +94,48 @@ local function serverHop()
     local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
     if not ok or not data or not data.data then return false end
     
-    local servers = {}
+    local validServers = {}
     for _, s in ipairs(data.data) do
-        if s.playing < s.maxPlayers and s.id ~= game.JobId then
-            table.insert(servers, s.id)
+        -- ĐIỀU KIỆN LỌC:
+        -- 1. Server phải còn chỗ (playing < maxPlayers)
+        -- 2. Server không phải là server hiện tại
+        -- 3. Server chưa từng ghé thăm
+        -- 4. Server không bị giới hạn (thường ID của server VIP sẽ có dấu hiệu riêng, nhưng ở đây ta chỉ lọc theo số người chơi)
+        if s.playing < s.maxPlayers 
+           and s.id ~= game.JobId 
+           and not table.find(CONFIG.VisitedServers, s.id) 
+        then
+            table.insert(validServers, s.id)
         end
     end
     
-    if #servers > 0 then
-        local chosen = servers[math.random(1, #servers)]
-        pcall(function()
+    if #validServers > 0 then
+        local chosen = validServers[math.random(1, #validServers)]
+        table.insert(CONFIG.VisitedServers, chosen) -- Đánh dấu đã ghé
+        
+        -- Thực hiện dịch chuyển
+        local success, err = pcall(function()
             TeleportService:TeleportToPlaceInstance(game.PlaceId, chosen, LP)
         end)
-        return true
+        
+        if success then
+            return true
+        else
+            warn("Lỗi teleport: " .. tostring(err))
+            return false
+        end
     end
     return false
 end
 
 -- ===== GUI =====
 local SG = Instance.new("ScreenGui")
-SG.Name = "FruitSniperGUI"
+SG.Name = "FruitSniperSafe"
 SG.ResetOnSpawn = false
 SG.Parent = CoreGui
 
 local ToggleBtn = Instance.new("TextButton", SG)
-ToggleBtn.Size = UDim2.new(0, 130, 0, 38)
+ToggleBtn.Size = UDim2.new(0, 140, 0, 38)
 ToggleBtn.Position = UDim2.new(0, 15, 0, 15)
 ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
 ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -153,7 +160,7 @@ FStroke.Thickness = 2
 local Title = Instance.new("TextLabel", F)
 Title.Size = UDim2.new(1, 0, 0, 45)
 Title.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
-Title.Text = "  🍎 FRUIT SNIPER"
+Title.Text = "  🍎 FRUIT SNIPER (SAFE HOP)"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
@@ -176,7 +183,7 @@ local Status = Instance.new("TextLabel", F)
 Status.Size = UDim2.new(1, -20, 0, 30)
 Status.Position = UDim2.new(0, 10, 0, 50)
 Status.BackgroundTransparency = 1
-Status.Text = "Chọn trái muốn nhặt ↓"
+Status.Text = "Sẵn sàng..."
 Status.TextColor3 = Color3.fromRGB(200, 200, 200)
 Status.Font = Enum.Font.Gotham
 Status.TextSize = 12
@@ -201,6 +208,7 @@ Pad.PaddingTop = UDim.new(0, 8)
 Pad.PaddingLeft = UDim.new(0, 8)
 Pad.PaddingRight = UDim.new(0, 8)
 
+-- Tạo nút cho các trái trong danh sách mặc định
 local fruitBtns = {}
 local function createBtn(name)
     local b = Instance.new("TextButton", Scroll)
@@ -213,7 +221,6 @@ local function createBtn(name)
     b.AutoButtonColor = false
     Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
     
-    -- Kiểm tra đã chọn chưa
     if isSelected(name) then
         b.BackgroundColor3 = Color3.fromRGB(0, 170, 80)
     end
@@ -231,14 +238,23 @@ local function createBtn(name)
             table.insert(CONFIG.SelectedFruits, name)
         end
         b.BackgroundColor3 = found and Color3.fromRGB(42, 42, 52) or Color3.fromRGB(0, 170, 80)
-        Status.Text = "✅ Đã chọn " .. #CONFIG.SelectedFruits .. " trái"
+        Status.Text = "Đã chọn " .. #CONFIG.SelectedFruits .. " trái"
         Status.TextColor3 = Color3.fromRGB(0, 255, 100)
     end)
     
     fruitBtns[name] = b
 end
 
-for _, fruit in ipairs(CONFIG.AllFruits) do
+-- Danh sách trái để chọn (có thể mở rộng)
+local AllFruits = {
+    "Rocket", "Spin", "Chop", "Spring", "Bomb", "Smoke", "Spike", "Flame",
+    "Falcon", "Ice", "Sand", "Dark", "Diamond", "Light", "Rubber", "Barrier",
+    "Magma", "Door", "Quake", "Buddha", "Love", "Spider", "Sound", "Phoenix",
+    "Portal", "Rumble", "Pain", "Blizzard", "Gravity", "Mammoth", "T-Rex",
+    "Dough", "Shadow", "Venom", "Control", "Spirit", "Dragon", "Leopard", "Kitsune", "Yeti", "Gas"
+}
+
+for _, fruit in ipairs(AllFruits) do
     createBtn(fruit)
 end
 
@@ -265,23 +281,23 @@ local function mkCtrl(txt, x, color, cb)
 end
 
 mkCtrl("⚡ Hop Ngay", 0, Color3.fromRGB(0, 120, 215), function()
-    Status.Text = "⚡ Đang hop..."
+    Status.Text = "Đang tìm server an toàn..."
     Status.TextColor3 = Color3.fromRGB(0, 170, 255)
     if not serverHop() then
-        Status.Text = "❌ Hop thất bại"
+        Status.Text = "Không tìm thấy server phù hợp"
         Status.TextColor3 = Color3.fromRGB(255, 100, 100)
     end
 end)
 
 mkCtrl("✅ Chọn tất cả", 0.33, Color3.fromRGB(0, 170, 80), function()
     CONFIG.SelectedFruits = {}
-    for _, fruit in ipairs(CONFIG.AllFruits) do
+    for _, fruit in ipairs(AllFruits) do
         table.insert(CONFIG.SelectedFruits, fruit)
         if fruitBtns[fruit] then
             fruitBtns[fruit].BackgroundColor3 = Color3.fromRGB(0, 170, 80)
         end
     end
-    Status.Text = "✅ Đã chọn tất cả"
+    Status.Text = "Đã chọn tất cả trái"
     Status.TextColor3 = Color3.fromRGB(0, 255, 100)
 end)
 
@@ -296,7 +312,7 @@ end)
 
 -- ===== VÒNG LẶP CHÍNH =====
 task.spawn(function()
-    while task.wait(2) do
+    while task.wait(3) do
         local fruits = findFruits()
         if #fruits > 0 then
             Status.Text = "🍎 Tìm thấy " .. #fruits .. " trái!"
@@ -309,7 +325,7 @@ task.spawn(function()
                 end
             end
         else
-            Status.Text = "❌ Không có trái. Đang hop..."
+            Status.Text = "Không có trái. Đang chờ hop..."
             Status.TextColor3 = Color3.fromRGB(255, 180, 0)
             
             if CONFIG.AutoHop then
@@ -342,4 +358,4 @@ UIS.InputEnded:Connect(function(i)
     end
 end)
 
-print("✅ Fruit Sniper loaded!")
+print("✅ Fruit Sniper Safe loaded!")
